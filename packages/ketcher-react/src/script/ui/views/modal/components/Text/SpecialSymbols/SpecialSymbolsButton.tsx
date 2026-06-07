@@ -1,0 +1,76 @@
+/****************************************************************************
+ * Copyright 2021 EPAM Systems
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+import { type LexicalEditor, $getSelection, $isRangeSelection } from 'lexical';
+
+import { SpecialSymbolsList } from '../SpecialSymbolsList/SpecialSymbolsList';
+import classes from './SpecialSymbolsButton.module.less';
+import { useId, useState } from 'react';
+import { Icon } from 'components';
+
+const SpecialSymbolsButton = ({ editor }: { editor: LexicalEditor }) => {
+  const [showSpecialSymbols, setShowSpecialSymbols] = useState(false);
+  const pickerId = 'special-symbols-picker-' + useId();
+
+  const handleClose = (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+    setShowSpecialSymbols(false);
+  };
+
+  const closeSymbolsList = (event) => {
+    if (!event.currentTarget.contains(event.relatedTarget)) {
+      handleClose(event);
+    }
+  };
+
+  const addSymbol = (e, value) => {
+    e.preventDefault();
+    editor.update(() => {
+      const selection = $getSelection();
+      if ($isRangeSelection(selection)) {
+        selection.insertText(value);
+      }
+    });
+    setShowSpecialSymbols(false);
+  };
+
+  return (
+    <div onBlur={closeSymbolsList} role="none">
+      <button
+        title="symbols"
+        data-testid="special-symbols-button"
+        onMouseDown={(e) => {
+          e.preventDefault();
+          setShowSpecialSymbols(!showSpecialSymbols);
+        }}
+        className={
+          showSpecialSymbols ? classes.activeTextButton : classes.textButton
+        }
+        aria-controls={pickerId}
+        aria-expanded={showSpecialSymbols}
+        aria-haspopup="true"
+      >
+        <Icon name="text-special-symbols" />
+      </button>
+      {showSpecialSymbols && (
+        <SpecialSymbolsList id={pickerId} onSelect={addSymbol} />
+      )}
+    </div>
+  );
+};
+
+export { SpecialSymbolsButton };

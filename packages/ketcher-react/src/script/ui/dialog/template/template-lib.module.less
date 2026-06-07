@@ -1,0 +1,181 @@
+/****************************************************************************
+ * Copyright 2021 EPAM Systems
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+@import '../../../../style/mixins';
+@import '../../../../style/variables';
+
+.warning {
+  color: @error-color;
+
+  &::before {
+    content: '⚠ ';
+  }
+}
+
+.dialogHeader {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding-left: 2px;
+
+  & > span {
+    line-height: 16px;
+  }
+
+  & > svg {
+    width: 18px;
+    height: 18px;
+  }
+}
+
+.button {
+  min-width: 70px !important;
+}
+
+.dialog_body {
+  background-color: @color-background-primary;
+  color: @color-text-primary;
+  width: 452px;
+
+  & > div {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  & > footer {
+    min-height: 24px;
+    box-shadow: 0 -6px 6px 0 @color-accordion-shadow;
+    z-index: 10;
+
+    & > input {
+      min-width: 110px !important;
+    }
+
+    & > span {
+      line-height: 24px;
+    }
+  }
+
+  .inputContainer {
+    position: relative;
+
+    input[type='search'] {
+      width: 424px;
+      padding-left: 35px;
+      background-color: @color-primary-light;
+      margin: 0 14px 16px 14px;
+      height: 28px;
+
+      &::placeholder {
+        font-weight: 400;
+        opacity: 90%;
+      }
+    }
+
+    .searchIcon {
+      width: 28px;
+      height: 28px;
+      position: absolute;
+      top: 0;
+      left: 14px;
+      color: @color-primary;
+    }
+  }
+
+  .accordionSummary {
+    flex-direction: row-reverse;
+    font-size: 14px;
+  }
+
+  .groupIcon {
+    margin-left: 15px;
+    margin-right: 8px;
+  }
+
+  .tabsContent {
+    height: 50vh;
+    background-color: @color-primary-light;
+    overflow-y: auto;
+    overflow-x: hidden;
+
+    .scrollbar();
+  }
+
+  .resultsContainer {
+    padding: 12px 14px 4px;
+    background-color: @color-primary-light;
+  }
+
+  .saveButton {
+    .button-secondary();
+
+    &[disabled] {
+      pointer-events: none;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+  }
+
+  /* stylelint-disable selector-pseudo-class-no-unknown, no-descending-specificity */
+  :global(.MuiTabs-indicator) {
+    background-color: @color-primary;
+  }
+
+  :global(.MuiTabs-flexContainer) {
+    background-color: @color-primary-light;
+    padding-left: 14px;
+  }
+
+  :global(.MuiPaper-root) {
+    &:not(:last-child)::after {
+      width: 424px;
+    }
+  }
+
+  :global(.MuiButtonBase-root.MuiTab-root),
+  :global(.MuiTabs-root) {
+    min-height: 32px;
+    height: 32px;
+  }
+
+  .tabs {
+    box-shadow: 0 6px 6px 0 @color-accordion-shadow;
+    z-index: 10;
+  }
+
+  :global(.MuiButtonBase-root.MuiTab-root) {
+    text-transform: none;
+    color: fade(@color-text-black, 70%);
+    padding: 12px 10px 8px;
+    line-height: 12px;
+  }
+
+  :global(.MuiAccordionDetails-root) {
+    width: 424px;
+  }
+
+  :global(.MuiTab-root.Mui-selected) {
+    font-weight: 600;
+    color: @color-text-black;
+  }
+
+  :global(.MuiTab-root.Mui-disabled) {
+    pointer-events: none;
+    cursor: not-allowed;
+    opacity: 0.6;
+  }
+}

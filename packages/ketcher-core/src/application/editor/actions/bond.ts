@@ -1,0 +1,404 @@
+/****************************************************************************
+ * Copyright 2021 EPAM Systems
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+import type { AtomAttributes } from 'domain/entities/atom';
+import { type BondAttributes, Bond } from 'domain/entities/bond';
+import type { Vec2 } from 'domain/entities/vec2';
+import { FunctionalGroup } from 'domain/entities/functionalGroup';
+import { SGroupAttachmentPoint } from 'domain/entities/sGroupAttachmentPoint';
+import type { SGroup } from 'domain/entities/sgroup';
+import {
+  AtomAdd,
+  AtomAttr,
+  BondAdd,
+  BondAttr,
+  BondDelete,
+  CalcImplicitH,
+  FragmentAdd,
+  FragmentAddStereoAtom,
+  FragmentDeleteStereoAtom,
+  FragmentStereoFlag,
+} from '../operations';
+import { atomForNewBond, atomGetAttr } from './utils';
+import { mergeFragmentsIfNeeded, mergeSgroups } from './atom';
+import { fromAtomMerge } from './atomMerge';
+import { fromBondStereoUpdate } from './bondStereo';
+
+import { Action } from './action';
+import type { ReSGroup, ReStruct } from '../../render';
+import utils from '../shared/utils';
+import { fromSgroupAttachmentPointRemove } from './sgroupAttachmentPoint';
+
+export function fromBondAddition(
+  reStruct: ReStruct,
+  bond: Partial<BondAttributes>,
+  begin: number | AtomAttributes,
+  end: number | AtomAttributes,
+  beginAtomPos?: Vec2,
+  endAtomPos?: Vec2,
+): [Action, number, number, number] {
+  const action = new Action();
+  const struct = reStruct.molecule;
+
+  const mouseDownNothingAndUpNothing = (
+    beginAtomAttr: AtomAttributes,
+    endAtomAttr: AtomAttributes,
+  ) => {
+    const newFragmentId = (
+      action.addOp(new FragmentAdd().perform(reStruct)) as FragmentAdd
+    ).frid as number;
+
+    const newBeginAtomId: number = (
+      action.addOp(
+        new AtomAdd(
+          { ...beginAtomAttr, fragment: newFragmentId },
+          beginAtomPos,
+        ).perform(reStruct),
+      ) as AtomAdd
+    ).data.aid as number;
+
+    const newEndAtomId: number = (
+      action.addOp(
+        new AtomAdd(
+          { ...endAtomAttr, fragment: newFragmentId },
+          endAtomPos,
+        ).perform(reStruct),
+      ) as AtomAdd
+    ).data.aid as number;
+
+    return [newBeginAtomId, newEndAtomId] as const;
+  };
+
+  const mouseDownNothingAndUpAtom = (
+    beginAtomAttr: AtomAttributes,
+    endAtomId: number,
+  ) => {
+    const fragmentId = atomGetAttr(reStruct, endAtomId, 'fragment');
+
+    const newBeginAtomId: number = (
+      action.addOp(
+        new AtomAdd(
+          { ...beginAtomAttr, fragment: fragmentId as number },
+          beginAtomPos,
+        ).perform(reStruct),
+      ) as AtomAdd
+    ).data.aid as number;
+
+    const endAtom = struct.atoms.get(endAtomId);
+    if (
+      endAtom &&
+      !FunctionalGroup.isAtomInContractedFunctionalGroup(
+        endAtom,
+        struct.sgroups,
+        struct.functionalGroups,
+      )
+    ) {
+      mergeSgroups(action, reStruct, [newBeginAtomId], endAtomId);
+    }
+    return [newBeginAtomId, endAtomId] as const;
+  };
+
+  const mouseDownAtomAndUpNothing = (
+    beginAtomId: number,
+    endAtomAttr: AtomAttributes,
+  ) => {
+    const fragmentId = atomGetAttr(reStruct, beginAtomId, 'fragment');
+
+    const newEndAtomId: number = (
+      action.addOp(
+        new AtomAdd(
+          {
+            ...endAtomAttr,
+            fragment: fragmentId as number,
+          },
+          endAtomPos ?? atomForNewBond(reStruct, begin, bond).pos,
+        ).perform(reStruct),
+      ) as AtomAdd
+    ).data.aid as number;
+
+    const beginAtom = struct.atoms.get(beginAtomId);
+    if (
+      beginAtom &&
+      !FunctionalGroup.isAtomInContractedFunctionalGroup(
+        beginAtom,
+        struct.sgroups,
+        struct.functionalGroups,
+      )
+    ) {
+      mergeSgroups(action, reStruct, [newEndAtomId], beginAtomId);
+    }
+
+    return [beginAtomId, newEndAtomId] as const;
+  };
+
+  let beginAtomId: number, endAtomId: number;
+
+  const startsOnAtom = typeof begin === 'number';
+  const endsOnAtom = typeof end === 'number';
+
+  if (!startsOnAtom && !endsOnAtom) {
+    [beginAtomId, endAtomId] = mouseDownNothingAndUpNothing(begin, end);
+  } else if (!startsOnAtom && endsOnAtom) {
+    [beginAtomId, endAtomId] = mouseDownNothingAndUpAtom(begin, end);
+  } else if (startsOnAtom && !endsOnAtom) {
+    [beginAtomId, endAtomId] = mouseDownAtomAndUpNothing(begin, end);
+  } else {
+    [beginAtomId, endAtomId] = [begin as number, end as number];
+
+    if (reStruct.sgroups && reStruct.sgroups.size > 0) {
+      reStruct.sgroups.forEach((sgroup) => {
+        if (sgroup.item?.type && sgroup.item?.type === 'SUP') {
+          addAttachmentPointToSuperatom(sgroup, beginAtomId, endAtomId);
+        }
+      });
+    }
+  }
+
+  const newBondId = (
+    action.addOp(
+      new BondAdd(beginAtomId, endAtomId, bond).perform(reStruct),
+    ) as BondAdd
+  ).data.bid as number;
+  const newBond = struct.bonds.get(newBondId);
+  if (newBond) {
+    action.addOp(
+      new CalcImplicitH([newBond.begin, newBond.end]).perform(reStruct),
+    );
+    action.mergeWith(fromBondStereoUpdate(reStruct, newBond));
+  }
+
+  action.operations.reverse();
+
+  const mergedFragmentId = mergeFragmentsIfNeeded(
+    action,
+    reStruct,
+    beginAtomId,
+    endAtomId,
+  );
+  if (struct.frags.get(mergedFragmentId || 0)?.stereoAtoms && !bond.stereo) {
+    action.addOp(
+      new FragmentStereoFlag(mergedFragmentId || 0).perform(reStruct),
+    );
+  }
+
+  return [action, beginAtomId, endAtomId, newBondId as number];
+}
+
+export function fromBondsAttrs(
+  restruct: ReStruct,
+  ids: Array<number> | number,
+  attrs: Partial<Bond>,
+  reset?: boolean,
+): Action {
+  const struct = restruct.molecule;
+  const action = new Action();
+  const bids = Array.isArray(ids) ? ids : [ids];
+
+  bids.forEach((bid) => {
+    Object.keys(Bond.attrlist).forEach((key) => {
+      if (!(key in attrs) && !reset) return;
+
+      const value = key in attrs ? attrs[key] : Bond.attrGetDefault(key);
+
+      action.addOp(new BondAttr(bid, key, value).perform(restruct));
+      if (key === 'stereo' && key in attrs) {
+        const bond = struct.bonds.get(bid);
+        if (bond) {
+          action.addOp(
+            new CalcImplicitH([bond.begin, bond.end]).perform(restruct),
+          );
+          action.mergeWith(fromBondStereoUpdate(restruct, bond));
+        }
+      }
+    });
+  });
+
+  return action;
+}
+
+export function fromBondsMerge(
+  restruct: ReStruct,
+  mergeMap: Map<number, number>,
+): Action {
+  const struct = restruct.molecule;
+
+  const atomPairs = new Map();
+  let action = new Action();
+
+  mergeMap.forEach((dstId, srcId) => {
+    const bond = struct.bonds.get(srcId);
+    const bondCI = struct.bonds.get(dstId);
+    if (!bond || !bondCI) return;
+    const params = utils.mergeBondsParams(struct, bond, struct, bondCI);
+    if (!params.merged) return;
+    atomPairs.set(bond.begin, !params.cross ? bondCI.begin : bondCI.end);
+    atomPairs.set(bond.end, !params.cross ? bondCI.end : bondCI.begin);
+  });
+
+  atomPairs.forEach((dst, src) => {
+    action = fromAtomMerge(restruct, src, dst).mergeWith(action);
+  });
+
+  return action;
+}
+
+export function fromBondFlipping(restruct: ReStruct, id: number): Action {
+  const bond = restruct.molecule.bonds.get(id);
+  const struct = restruct.molecule;
+
+  const action = new Action();
+  action.addOp(new BondDelete(id).perform(restruct));
+
+  // TODO: find better way to avoid problem with bond.begin = 0
+  if (Number.isInteger(bond?.end) && Number.isInteger(bond?.begin)) {
+    const bondAddOp = new BondAdd(bond?.end, bond?.begin, bond);
+    action.addOp(bondAddOp.perform(restruct));
+
+    if (bond?.stereo && bond.stereo !== Bond.PATTERN.STEREO.NONE) {
+      const oldBeginId = bond.begin;
+      const oldEndId = bond.end; // becomes new begin after flip
+      const oldBeginAtom = struct.atoms.get(oldBeginId);
+      const frid = oldBeginAtom?.fragment;
+
+      if (frid !== undefined) {
+        const fragment = struct.frags.get(frid);
+        const isOldBeginStereoAtom =
+          fragment?.stereoAtoms.includes(oldBeginId) ?? false;
+
+        if (isOldBeginStereoAtom) {
+          const stereoLabel = oldBeginAtom?.stereoLabel ?? null;
+          const stereoParity = oldBeginAtom?.stereoParity ?? 0;
+          action.addOp(
+            new AtomAttr(oldBeginId, 'stereoLabel', null).perform(restruct),
+          );
+          action.addOp(
+            new AtomAttr(oldBeginId, 'stereoParity', 0).perform(restruct),
+          );
+          action.addOp(
+            new FragmentDeleteStereoAtom(frid, oldBeginId).perform(restruct),
+          );
+          action.addOp(
+            new AtomAttr(oldEndId, 'stereoLabel', stereoLabel).perform(
+              restruct,
+            ),
+          );
+          action.addOp(
+            new AtomAttr(oldEndId, 'stereoParity', stereoParity).perform(
+              restruct,
+            ),
+          );
+          action.addOp(
+            new FragmentAddStereoAtom(frid, oldEndId).perform(restruct),
+          );
+        } else {
+          const newBond = struct.bonds.get(bondAddOp.data.bid as number);
+          if (newBond) {
+            action.mergeWith(fromBondStereoUpdate(restruct, newBond));
+          }
+        }
+      }
+    }
+  }
+
+  return action;
+}
+
+const plainBondTypes = [
+  Bond.PATTERN.TYPE.SINGLE,
+  Bond.PATTERN.TYPE.DOUBLE,
+  Bond.PATTERN.TYPE.TRIPLE,
+];
+
+export function bondChangingAction(
+  restruct: ReStruct,
+  itemID: number,
+  bond: Bond,
+  bondProps: Partial<BondAttributes>,
+): Action {
+  const action = new Action();
+  let newItemId = itemID;
+  if (
+    ((bondProps.stereo !== Bond.PATTERN.STEREO.NONE && //
+      bondProps.type === Bond.PATTERN.TYPE.SINGLE) ||
+      bond.type === Bond.PATTERN.TYPE.DATIVE) &&
+    bond.type === bondProps.type &&
+    bond.stereo === bondProps.stereo
+  ) {
+    action.mergeWith(fromBondFlipping(restruct, itemID));
+    newItemId = (action.operations[1] as BondAdd).data.bid as number;
+  }
+  // if bondTool is stereo and equal to bond for change
+
+  const loop =
+    bondProps.type !== undefined && plainBondTypes.includes(bondProps.type)
+      ? plainBondTypes
+      : null;
+  if (
+    bondProps.stereo === Bond.PATTERN.STEREO.NONE &&
+    bondProps.type === Bond.PATTERN.TYPE.SINGLE &&
+    bond.stereo === Bond.PATTERN.STEREO.NONE &&
+    loop
+  ) {
+    // if `Single bond` tool is chosen and bond for change in `plainBondTypes`
+    bondProps.type = loop[(loop.indexOf(bond.type) + 1) % loop.length];
+  }
+
+  return fromBondsAttrs(restruct, newItemId, bondProps).mergeWith(action);
+}
+
+function addAttachmentPointToSuperatom(
+  sgroup: ReSGroup,
+  beginAtomId: number,
+  endAtomId: number,
+) {
+  (sgroup.item?.atoms as number[]).forEach((atomId) => {
+    if (beginAtomId === atomId || endAtomId === atomId) {
+      if (
+        !(sgroup.item as SGroup)
+          .getAttachmentPoints()
+          .map((attachmentPoint) => attachmentPoint.atomId)
+          .includes(atomId)
+      )
+        sgroup.item?.addAttachmentPoint(
+          new SGroupAttachmentPoint(atomId, undefined, undefined),
+        );
+    }
+  });
+}
+
+export function removeAttachmentPointFromSuperatom(
+  sgroup: ReSGroup,
+  beginAtomId: number | undefined,
+  endAtomId: number | undefined,
+  action: Action,
+  restruct: ReStruct,
+) {
+  (sgroup.item?.atoms as number[]).forEach((atomId) => {
+    if (beginAtomId === atomId || endAtomId === atomId) {
+      const anotherSideAtomId =
+        beginAtomId === atomId ? endAtomId : beginAtomId;
+      action.mergeWith(
+        fromSgroupAttachmentPointRemove(
+          restruct,
+          sgroup.item?.id as number,
+          atomId,
+          anotherSideAtomId,
+          false,
+        ),
+      );
+    }
+  });
+}

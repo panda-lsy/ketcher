@@ -1,0 +1,307 @@
+/****************************************************************************
+ * Copyright 2021 EPAM Systems
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *    http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ ***************************************************************************/
+
+import type { BaseCallProps, BaseProps } from '../../../modal.types';
+
+import Form, {
+  Field,
+  CustomQueryField,
+} from '../../../../../component/form/form/form';
+import { type FC, useMemo, useState } from 'react';
+
+import { Dialog } from '../../../../components';
+import {
+  type AtomAllAttributeName,
+  SettingsManager,
+  getAtomCustomQuery,
+} from 'ketcher-core';
+import { atom as atomSchema } from '../../../../../data/schema/struct-schema';
+import classes from './Atom.module.less';
+import Select from '../../../../../component/form/Select';
+import { getSelectOptionsFromSchema } from '../../../../../utils';
+import clsx from 'clsx';
+import { Icon } from 'components';
+import {
+  AtomListValid,
+  atomValid,
+  chargeValid,
+  customQueryValid,
+  pseudoAtomValid,
+} from './helper';
+import AtomElement from './AtomElement/AtomElement';
+
+interface AtomProps extends BaseCallProps, BaseProps {
+  alias: string;
+  charge: string;
+  exactChangeFlag: boolean;
+  explicitValence: number;
+  hCount: number;
+  invRet: number;
+  isotope: number;
+  label: string;
+  radical: number;
+  ringBondCount: number;
+  stereoParity: number;
+  substitutionCount: number;
+  unsaturatedAtom: boolean;
+  customQuery: string;
+}
+
+type Props = AtomProps & {
+  isMultipleAtoms?: boolean;
+  isRestoredModal: boolean;
+  isMonomerCreationWizardActive?: boolean;
+};
+
+const atomProps = atomSchema.properties;
+const querySpecificFields: Array<{
+  name: AtomAllAttributeName;
+  component?: 'dropdown';
+  labelPos?: 'before' | 'after';
+  className?: string;
+}> = [
+  { name: 'ringBondCount', component: 'dropdown' },
+  { name: 'hCount', component: 'dropdown' },
+  { name: 'substitutionCount', component: 'dropdown' },
+  { name: 'unsaturatedAtom', labelPos: 'before', className: classes.checkbox },
+  { name: 'aromaticity', component: 'dropdown' },
+  { name: 'implicitHCount', component: 'dropdown' },
+  { name: 'ringMembership', component: 'dropdown' },
+  { name: 'ringSize', component: 'dropdown' },
+  { name: 'connectivity', component: 'dropdown' },
+  { name: 'chirality', component: 'dropdown' },
+];
+
+const Atom: FC<Props> = (props: Props) => {
+  const {
+    formState,
+    /* eslint-disable @typescript-eslint/no-unused-vars */
+    stereoParity,
+    /* eslint-enable @typescript-eslint/no-unused-vars */
+    isMultipleAtoms = false,
+    isRestoredModal,
+    isMonomerCreationWizardActive = false,
+    ...rest
+  } = props;
+  const [isCustomQuery, setIsCustomQuery] = useState(Boolean(rest.customQuery));
+  const [expandedAccordions, setExpandedAccordions] = useState<string[]>(
+    isCustomQuery ? [] : ['General'],
+  );
+  const handleAccordionChange = (accordion) => () => {
+    if (isMonomerCreationWizardActive) {
+      return;
+    }
+
+    if (isCustomQuery) {
+      return;
+    }
+
+    const isExpand = !expandedAccordions.includes(accordion);
+    setExpandedAccordions(
+      isExpand
+        ? [...expandedAccordions, accordion]
+        : [...expandedAccordions].filter(
+            (expandedAccordion) => expandedAccordion !== accordion,
+          ),
+    );
+  };
+
+  const handleCustomQueryCheckBoxChange = (
+    value: boolean,
+    formState,
+    setCustomQuery: (value: string) => void,
+  ) => {
+    if (isMonomerCreationWizardActive) {
+      return;
+    }
+
+    const query = value ? getAtomCustomQuery(formState) : '';
+    setCustomQuery(query);
+    setIsCustomQuery(value);
+    setExpandedAccordions([]);
+  };
+
+  const customValid = useMemo(() => {
+    const atomType = formState.result.atomType;
+    const disableQueryElements =
+      SettingsManager.getOptions().disableQueryElements;
+    return {
+      label: (label: string) =>
+        atomValid(label, isMultipleAtoms, atomType, isCustomQuery),
+      pseudo: (value: string) =>
+        pseudoAtomValid(value, atomType, isCustomQuery, disableQueryElements),
+      atomList: (value: string) =>
+        AtomListValid(value, atomType, isCustomQuery),
+      charge: (charge) =>
+        chargeValid(charge, isMultipleAtoms, isCustomQuery) ?? false,
+      customQuery: (value: string) => customQueryValid(value, isCustomQuery),
+    };
+  }, [formState.result.atomType, isCustomQuery, isMultipleAtoms]);
+
+  const itemGroups = [
+    {
+      groupName: 'General',
+      component: (
+        <div>
+          <AtomElement formState={formState} className=""></AtomElement>
+          <Field name="alias" data-testid="alias" />
+          <Field
+            name="charge"
+            maxLength={atomProps.charge.maxLength}
+            data-testid="charge"
+          />
+          <Field
+            name="isotope"
+            maxLength={atomProps.isotope.maxLength}
+            data-testid="isotope"
+          />
+          <Field
+            name="explicitValence"
+            component={Select}
+            options={getSelectOptionsFromSchema(atomProps.explicitValence)}
+            data-testid="explicitValence"
+          />
+          <Field
+            name="radical"
+            component={Select}
+            options={getSelectOptionsFromSchema(atomProps.radical)}
+            data-testid="radical"
+          />
+        </div>
+      ),
+    },
+    {
+      groupName: 'Query specific',
+      component: (
+        <div className={classes.querySpecific}>
+          {querySpecificFields.map((field) => {
+            if (field.component === 'dropdown') {
+              return (
+                <Field
+                  key={field.name}
+                  name={field.name}
+                  component={Select}
+                  options={getSelectOptionsFromSchema(atomProps[field.name])}
+                  data-testid={field.name}
+                />
+              );
+            } else {
+              return <Field key={field.name} {...field} />;
+            }
+          })}
+        </div>
+      ),
+    },
+    {
+      groupName: 'Reaction flags',
+      component: (
+        <div className={classes.reactionFlags}>
+          <Field
+            name="invRet"
+            component={Select}
+            options={getSelectOptionsFromSchema(atomProps.invRet)}
+            data-testid="inversion"
+          />
+          <Field
+            name="exactChangeFlag"
+            labelPos="before"
+            className={classes.checkbox}
+          />
+        </div>
+      ),
+    },
+  ];
+
+  return (
+    <Dialog
+      title="Atom Properties"
+      className={classes.atomProps}
+      result={() => formState.result}
+      valid={() => formState.valid}
+      params={rest}
+      buttonsNameMap={{ OK: 'Apply' }}
+      buttons={['Cancel', 'OK']}
+      withDivider
+    >
+      <Form
+        schema={atomSchema}
+        customValid={customValid}
+        init={isRestoredModal ? null : rest}
+        {...formState}
+      >
+        <div className={classes.accordionWrapper}>
+          {itemGroups.map(({ groupName, component }) => {
+            const shouldGroupBeRended = expandedAccordions.includes(groupName);
+            const isDisabled =
+              isMonomerCreationWizardActive &&
+              (groupName === 'Query specific' ||
+                groupName === 'Reaction flags');
+
+            return (
+              <div key={groupName} data-testid={`${groupName}-section`}>
+                <button
+                  onClick={handleAccordionChange(groupName)}
+                  className={classes.accordionSummaryWrapper}
+                  disabled={isCustomQuery || isDisabled}
+                  type="button"
+                >
+                  <div className={classes.accordionSummary}>
+                    <span>{groupName}</span>
+                    <Icon
+                      className={clsx({
+                        [classes.expandIcon]: true,
+                        [classes.turnedIcon]: !shouldGroupBeRended,
+                      })}
+                      name="chevron"
+                    />
+                  </div>
+                </button>
+                <div
+                  className={clsx({
+                    [classes.accordionDetailsWrapper]: true,
+                    [classes.hiddenAccordion]: !shouldGroupBeRended,
+                  })}
+                  data-testid={`${groupName}-wrapper`}
+                >
+                  <div className={classes.accordionDetails}>{component}</div>
+                </div>
+              </div>
+            );
+          })}
+          {!SettingsManager.disableCustomQuery && (
+            <div
+              className={classes.customQueryWrapper}
+              aria-disabled={isMonomerCreationWizardActive}
+            >
+              <CustomQueryField
+                name="customQuery"
+                labelPos="after"
+                className={classes.checkbox}
+                disabled={!isCustomQuery}
+                checkboxValue={isCustomQuery}
+                onCheckboxChange={handleCustomQueryCheckBoxChange}
+                data-testid="atom-custom-query"
+              />
+            </div>
+          )}
+        </div>
+      </Form>
+    </Dialog>
+  );
+};
+
+export type { AtomProps };
+export default Atom;

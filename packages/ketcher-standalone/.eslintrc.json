@@ -1,0 +1,5 @@
+{
+  "root": false,
+  "extends": "plugin:jest/recommended",
+  "rules": {}
+}
