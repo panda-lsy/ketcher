@@ -200,6 +200,65 @@ const getHiddenButtonsConfig = (): ButtonsConfig => {
   }
 })();
 
+// ★ 拦截 saveAs，自动注入中文字体到 SVG/PNG 导出
+function setupSaveInterceptor() {
+  const origCreateObjectURL = URL.createObjectURL.bind(URL);
+  const FONT_CSS =
+    "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');";
+  const FONT_FF =
+    "'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif";
+
+  function injectFont(svg: string): string {
+    if (!svg || !svg.includes('<svg')) return svg;
+    const fontDef = `<defs><style>${FONT_CSS}</style></defs>`;
+    let r = svg.replace(/<svg([^>]*)>/, `<svg$1>${fontDef}`);
+    r = r.replace(/<text /g, `<text font-family="${FONT_FF}" `);
+    r = r.replace(/<text>/g, `<text font-family="${FONT_FF}">`);
+    return r;
+  }
+
+  // 拦截 createElement('a') + click() 模式（file-saver 使用此方式）
+  const origCreateElement = document.createElement.bind(document);
+  document.createElement = function (
+    tag: string,
+    options?: ElementCreationOptions,
+  ) {
+    const el = origCreateElement(tag, options);
+    if (tag.toLowerCase() === 'a') {
+      const origClick = (el as HTMLAnchorElement).click.bind(el);
+      (el as HTMLAnchorElement).click = function () {
+        const href = el.getAttribute('href') || '';
+        // 检查是否为 SVG data URL
+        if (href.startsWith('data:image/svg+xml')) {
+          try {
+            const comma = href.indexOf(',');
+            const meta = href.substring(0, comma);
+            const b64 = href.substring(comma + 1);
+            const svg = atob(b64);
+            const injected = injectFont(svg);
+            el.setAttribute(
+              'href',
+              meta + ',' + btoa(unescape(encodeURIComponent(injected))),
+            );
+          } catch (_) {}
+        }
+        origClick();
+      };
+    }
+    return el;
+  } as typeof document.createElement;
+
+  // 也拦截 URL.createObjectURL（某些版本的 file-saver 使用此方式）
+  URL.createObjectURL = function (blob: Blob | MediaSource) {
+    if (blob instanceof Blob && blob.type === 'image/svg+xml') {
+      return origCreateObjectURL(blob); // SVG blob 由上面的 createElement 拦截处理
+    }
+    return origCreateObjectURL(blob);
+  };
+}
+
+setupSaveInterceptor();
+
 async function fallbackExportPng(
   ketcher: Ketcher,
   post: (type: string, payload: Record<string, unknown>) => void,

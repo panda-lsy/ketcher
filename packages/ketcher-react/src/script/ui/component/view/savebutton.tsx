@@ -25,6 +25,17 @@ import { useAppContext } from '../../../../hooks';
 import { fileSaver } from './saveButton.utils';
 import type { SaverType } from './saveButton.types';
 
+// ★ 中文字体注入（内联防止 rollup tree-shake）
+function inlineInjectChineseFont(svg: string): string {
+  if (!svg || !svg.includes('<svg')) return svg;
+  const fontDef = '<defs><style>@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&amp;display=swap");</style></defs>';
+  const ff = "font-family='Noto Sans SC, Microsoft YaHei, PingFang SC, Arial, sans-serif'";
+  let r = svg.replace(/<svg([^>]*)>/, '<svg$1>' + fontDef);
+  r = r.replace(/<text /g, '<text ' + ff + ' ');
+  r = r.replace(/<text>/g, '<text ' + ff + '>');
+  return r;
+}
+
 type Props = {
   server?: any;
   filename: string;
@@ -78,7 +89,13 @@ const SaveButton = (props: SaveButtonProps) => {
     if (options?.outputFormat) {
       ketcherInstance
         .generateImage(data, options)
-        .then((blob) => {
+        .then(async (blob) => {
+          // ★ SVG 格式：注入中文字体
+          if (options.outputFormat === 'svg') {
+            const svgText = await blob.text();
+            const processed = inlineInjectChineseFont(svgText);
+            blob = new Blob([processed], { type: 'image/svg+xml' });
+          }
           saveAs(blob, `${filename}.${options.outputFormat}`);
           onSave();
         })

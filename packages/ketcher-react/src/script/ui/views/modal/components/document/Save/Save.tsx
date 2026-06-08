@@ -48,6 +48,25 @@ import {
   SupportedFormat,
 } from 'ketcher-core';
 
+// ★ 中文字体注入（内联防止 rollup tree-shake）
+function inlineInjectChineseFont(svg: string): string {
+  if (!svg || !svg.includes('<svg')) return svg;
+  const fontDef = '<defs><style>@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&amp;display=swap");</style></defs>';
+  const ff = "font-family='Noto Sans SC, Microsoft YaHei, PingFang SC, Arial, sans-serif'";
+  let r = svg.replace(/<svg([^>]*)>/, '<svg$1>' + fontDef);
+  r = r.replace(/<text /g, '<text ' + ff + ' ');
+  r = r.replace(/<text>/g, '<text ' + ff + '>');
+  return r;
+}
+
+function inlineProcessBase64Svg(base64: string): string {
+  try {
+    const s = atob(base64);
+    const p = inlineInjectChineseFont(s);
+    return btoa(unescape(encodeURIComponent(p)));
+  } catch { return base64; }
+}
+
 import { Dialog } from '../../../../components';
 import Tabs from 'src/script/ui/component/view/Tabs';
 import { ErrorsContext } from '../../../../../../../contexts';
@@ -359,10 +378,14 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
       return server
         .generateImageAsBase64(structStr, serverOptions as GenerateImageOptions)
         .then((base64) => {
+          // ★ SVG 格式：注入中文字体支持
+          const processedBase64 =
+            type === 'svg' ? inlineProcessBase64Svg(base64) : base64;
           this.setState({
             disableControls: false,
             tabIndex: 0,
-            imageSrc: base64,
+            imageSrc: processedBase64,
+            imageFormat: type,
             isLoading: false,
           });
         })
