@@ -760,7 +760,8 @@ export class Ketcher {
   }
 
   private static _injectChineseFont(svg: string): string {
-    const fontCSS = "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');";
+    // ★ & 必须转义为 &amp;（SVG 是 XML 格式）
+    const fontCSS = "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&amp;display=swap');";
     const fontFamily = "'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif";
     const fontDef = `<defs><style>${fontCSS}</style></defs>`;
     let result = svg.replace(/<svg([^>]*)>/, `<svg$1>${fontDef}`);
