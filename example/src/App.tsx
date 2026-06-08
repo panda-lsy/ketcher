@@ -200,6 +200,20 @@ const getHiddenButtonsConfig = (): ButtonsConfig => {
   }
 })();
 
+/** 在 SVG 字符串中注入中文字体支持 */
+function injectChineseFont(svg: string): string {
+  const fontCSS =
+    '<defs><style>@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&amp;display=swap");</style></defs>';
+  const fontFamily =
+    "font-family='Noto Sans SC, Microsoft YaHei, PingFang SC, Arial, sans-serif'";
+  // 在 <svg> 标签后插入字体定义
+  let result = svg.replace(/<svg([^>]*)>/, `<svg$1>${fontCSS}`);
+  // 给所有 <text> 元素添加 font-family
+  result = result.replace(/<text /g, `<text ${fontFamily} `);
+  result = result.replace(/<text>/g, `<text ${fontFamily}>`);
+  return result;
+}
+
 function setupPostMessageBridge(ketcher: Ketcher) {
   let lastSmiles = '';
   let pollTimer: ReturnType<typeof setInterval> | null = null;
@@ -261,21 +275,36 @@ function setupPostMessageBridge(ketcher: Ketcher) {
         }
         case 'exportSvg': {
           if (ketcher.generateImage) {
-            const svg = await ketcher.generateImage(
-              (await ketcher.getSmiles()) || '',
-              { outputFormat: 'svg' },
-            );
-            post('exportSvgResult', { svgString: svg });
+            try {
+              const blob = await ketcher.generateImage(
+                (await ketcher.getSmiles()) || '',
+                { outputFormat: 'svg' },
+              );
+              let svgText = await blob.text();
+              // ★ 注入中文字体支持
+              svgText = injectChineseFont(svgText);
+              post('exportSvgResult', { svgString: svgText });
+            } catch (err) {
+              post('onError', { message: 'SVG export: ' + String(err) });
+            }
           }
           break;
         }
         case 'exportPng': {
           if (ketcher.generateImage) {
-            const png = await ketcher.generateImage(
-              (await ketcher.getSmiles()) || '',
-              { outputFormat: 'png' },
-            );
-            post('exportPngResult', { dataUrl: png });
+            try {
+              const blob = await ketcher.generateImage(
+                (await ketcher.getSmiles()) || '',
+                { outputFormat: 'png' },
+              );
+              const reader = new FileReader();
+              reader.onload = () => {
+                post('exportPngResult', { dataUrl: reader.result });
+              };
+              reader.readAsDataURL(blob);
+            } catch (err) {
+              post('onError', { message: 'PNG export: ' + String(err) });
+            }
           }
           break;
         }
