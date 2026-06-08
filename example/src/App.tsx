@@ -200,18 +200,25 @@ const getHiddenButtonsConfig = (): ButtonsConfig => {
   }
 })();
 
-/** 在 SVG 字符串中注入中文字体支持 */
-function injectChineseFont(svg: string): string {
-  const fontCSS =
-    '<defs><style>@import url("https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&amp;display=swap");</style></defs>';
-  const fontFamily =
-    "font-family='Noto Sans SC, Microsoft YaHei, PingFang SC, Arial, sans-serif'";
-  // 在 <svg> 标签后插入字体定义
-  let result = svg.replace(/<svg([^>]*)>/, `<svg$1>${fontCSS}`);
-  // 给所有 <text> 元素添加 font-family
-  result = result.replace(/<text /g, `<text ${fontFamily} `);
-  result = result.replace(/<text>/g, `<text ${fontFamily}>`);
-  return result;
+async function fallbackExportPng(
+  ketcher: Ketcher,
+  post: (type: string, payload: Record<string, unknown>) => void,
+) {
+  try {
+    if (ketcher.generateImage) {
+      const blob = await ketcher.generateImage(
+        (await ketcher.getSmiles()) || '',
+        { outputFormat: 'png' },
+      );
+      const reader = new FileReader();
+      reader.onload = () => {
+        post('exportPngResult', { dataUrl: reader.result });
+      };
+      reader.readAsDataURL(blob);
+    }
+  } catch (err) {
+    post('onError', { message: 'PNG fallback: ' + String(err) });
+  }
 }
 
 function setupPostMessageBridge(ketcher: Ketcher) {
@@ -274,37 +281,80 @@ function setupPostMessageBridge(ketcher: Ketcher) {
           break;
         }
         case 'exportSvg': {
-          if (ketcher.generateImage) {
-            try {
+          try {
+            // ★ 使用 canvas SVG（含中文字体注入）替代 Indigo 渲染
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const canvas = (ketcher.editor as any)?.canvas as
+              | SVGSVGElement
+              | undefined;
+            if (canvas) {
+              const { getSvgFromDrawnStructures } = await import(
+                'ketcher-core'
+              );
+              const svg = getSvgFromDrawnStructures(canvas, 'file');
+              if (svg) {
+                post('exportSvgResult', { svgString: svg });
+                break;
+              }
+            }
+            // 回退到 Indigo
+            if (ketcher.generateImage) {
               const blob = await ketcher.generateImage(
                 (await ketcher.getSmiles()) || '',
                 { outputFormat: 'svg' },
               );
-              let svgText = await blob.text();
-              // ★ 注入中文字体支持
-              svgText = injectChineseFont(svgText);
-              post('exportSvgResult', { svgString: svgText });
-            } catch (err) {
-              post('onError', { message: 'SVG export: ' + String(err) });
+              post('exportSvgResult', { svgString: await blob.text() });
             }
+          } catch (err) {
+            post('onError', { message: 'SVG export: ' + String(err) });
           }
           break;
         }
         case 'exportPng': {
-          if (ketcher.generateImage) {
-            try {
-              const blob = await ketcher.generateImage(
-                (await ketcher.getSmiles()) || '',
-                { outputFormat: 'png' },
+          try {
+            // ★ 使用 canvas SVG 转 PNG（浏览器渲染，支持中文）
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const canvas = (ketcher.editor as any)?.canvas as
+              | SVGSVGElement
+              | undefined;
+            if (canvas) {
+              const { getSvgFromDrawnStructures } = await import(
+                'ketcher-core'
               );
-              const reader = new FileReader();
-              reader.onload = () => {
-                post('exportPngResult', { dataUrl: reader.result });
-              };
-              reader.readAsDataURL(blob);
-            } catch (err) {
-              post('onError', { message: 'PNG export: ' + String(err) });
+              const svgStr = getSvgFromDrawnStructures(canvas, 'file');
+              if (svgStr) {
+                // SVG → Canvas → PNG
+                const img = new Image();
+                const svgBlob = new Blob([svgStr], { type: 'image/svg+xml' });
+                const url = URL.createObjectURL(svgBlob);
+                img.onload = () => {
+                  const c = document.createElement('canvas');
+                  c.width = img.width * 2;
+                  c.height = img.height * 2;
+                  const ctx = c.getContext('2d');
+                  if (ctx) {
+                    ctx.scale(2, 2);
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(0, 0, img.width, img.height);
+                    ctx.drawImage(img, 0, 0);
+                    post('exportPngResult', {
+                      dataUrl: c.toDataURL('image/png'),
+                    });
+                  }
+                  URL.revokeObjectURL(url);
+                };
+                img.onerror = () => {
+                  URL.revokeObjectURL(url);
+                  // 回退到 Indigo
+                  fallbackExportPng(ketcher, post);
+                };
+                img.src = url;
+                break;
+              }
             }
+            fallbackExportPng(ketcher, post);
+          } catch (err) {
+            post('onError', { message: 'PNG export: ' + String(err) });
           }
           break;
         }
