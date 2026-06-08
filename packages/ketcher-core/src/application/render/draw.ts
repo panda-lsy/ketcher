@@ -22,6 +22,29 @@ import { Vec2 } from 'domain/entities/vec2';
 import { getOptionsWithConvertedUnits } from './options';
 import Raphael from './raphael-ext';
 import svgPath from 'svgpath';
+
+// Dark mode bond color helper
+// 检测暗色模式：优先读 data-theme 属性，回退检测 body 背景亮度
+function getDefaultBondColor(): string {
+  try {
+    const root = document.documentElement;
+    // 方法1: data-theme 属性
+    if (root.getAttribute('data-theme') === 'dark') return '#e9eef5';
+    // 方法2: CSS 变量
+    const cssVar = getComputedStyle(root).getPropertyValue('--ketcher-bond-color').trim();
+    if (cssVar) return cssVar;
+    // 方法3: body 背景亮度检测
+    const bg = getComputedStyle(document.body).backgroundColor;
+    if (bg) {
+      const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (m) {
+        const lum = (parseInt(m[1]) * 299 + parseInt(m[2]) * 587 + parseInt(m[3]) * 114) / 1000;
+        if (lum < 128) return '#e9eef5';
+      }
+    }
+  } catch (_) {}
+  return '#000';
+}
 import util from './util';
 import type { ArrowItem, RelativeBox, RenderOptions } from './render.types';
 import { toFixed } from 'utilities';
@@ -508,7 +531,7 @@ function arrowFilledTriangle(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -540,7 +563,7 @@ function arrowFilledBow(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -589,7 +612,7 @@ function arrowDashedOpenAngle(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -656,7 +679,7 @@ function arrowFailed(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -741,7 +764,7 @@ function arrowBothEndsFilledTriangle(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -791,7 +814,7 @@ function arrowEquilibriumFilledHalfBow(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -843,7 +866,7 @@ function arrowEquilibriumFilledTriangle(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -940,7 +963,7 @@ function arrowUnbalancedEquilibriumFilledHalfBow(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -1046,7 +1069,7 @@ function arrowUnbalancedEquilibriumLargeFilledHalfBow(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -1096,7 +1119,7 @@ function arrowUnbalancedEquilibriumFilledHalfTriangle(
 
   return paper.path(transformedPath).attr({
     ...options.lineattr,
-    fill: '#000',
+    fill: getDefaultBondColor(),
     ...(shouldApplySnappingStyle && options.arrowSnappingStyle),
   });
 }
@@ -1122,7 +1145,7 @@ function bondSingle(
   halfBond2: HalfBond,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   const a = halfBond1.p;
   const b = halfBond2.p;
@@ -1143,7 +1166,7 @@ function bondSingleUp(
   b3: Vec2,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   // eslint-disable-line max-params
   return paper
@@ -1172,7 +1195,7 @@ function bondSingleStereoBold(
   a4: Vec2,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   // eslint-disable-line max-params
   const bond = paper
@@ -1203,7 +1226,7 @@ function bondDoubleStereoBold(
   b2: Vec2,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   // eslint-disable-line max-params
   return paper.set([
@@ -1233,7 +1256,7 @@ function bondSingleDown(
   step: number,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   // eslint-disable-line max-params
   const a = halfBond1.p;
@@ -1268,7 +1291,7 @@ function bondSingleEither(
   step: number,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   // eslint-disable-line max-params
   const a = halfBond1.p;
@@ -1360,7 +1383,7 @@ function bondTriple(
   halfBond2: HalfBond,
   options: RenderOptions,
   isSnapping: boolean,
-  color = '#000',
+  color = getDefaultBondColor(),
 ) {
   const a = halfBond1.p;
   const b = halfBond2.p;
@@ -1516,7 +1539,7 @@ function bondMark(
   const path = paper.text(point.x, point.y, mark).attr({
     font: options.font,
     'font-size': options.fontszsubInPx,
-    fill: '#000',
+    fill: getDefaultBondColor(),
   });
   const rbb = util.relBox(path.getBBox());
   recenterText(path, rbb);
@@ -1538,7 +1561,7 @@ function radicalCap(paper: RaphaelPaper, point1: Vec2, options: RenderOptions) {
       toFixed(point1.y + dh),
     )
     .attr({
-      stroke: '#000',
+      stroke: getDefaultBondColor(),
       'stroke-width': options.lineWidth * 0.7,
       'stroke-linecap': 'square',
       'stroke-linejoin': 'miter',
@@ -1554,7 +1577,7 @@ function radicalBullet(
     .circle(toFixed(point1.x), toFixed(point1.y), options.lineWidth)
     .attr({
       stroke: null,
-      fill: '#000',
+      fill: getDefaultBondColor(),
     });
 }
 

@@ -42,6 +42,23 @@ import {
   UsageInMacromolecule,
 } from 'application/render/render.types';
 import { MonomerMicromolecule } from 'domain/entities/monomerMicromolecule';
+
+// Dark mode atom color helper
+function getDefaultAtomColor(): string {
+  try {
+    const root = document.documentElement;
+    if (root.getAttribute('data-theme') === 'dark') return '#e9eef5';
+    const bg = getComputedStyle(document.body).backgroundColor;
+    if (bg) {
+      const m = bg.match(/rgb\((\d+),\s*(\d+),\s*(\d+)\)/);
+      if (m) {
+        const lum = (parseInt(m[1]) * 299 + parseInt(m[2]) * 587 + parseInt(m[3]) * 114) / 1000;
+        if (lum < 128) return '#e9eef5';
+      }
+    }
+  } catch (_) {}
+  return '#000';
+}
 import { type AttachmentPointName, attachmentPointNames } from 'domain/types';
 import { getAttachmentPointLabel } from 'domain/helpers/attachmentPointCalculations';
 import { VALENCE_MAP } from 'application/render/restruct/constants';
@@ -93,7 +110,7 @@ class ReAtom extends ReObject {
 
     this.hydrogenOnTheLeft = false;
 
-    this.color = '#000000';
+    this.color = getDefaultAtomColor();
     this.component = -1;
   }
 
@@ -374,7 +391,7 @@ class ReAtom extends ReObject {
   ) {
     const invisibleAtomTarget = this.getSelectionContour(render).attr({
       opacity: 0,
-      fill: '#000',
+      fill: getDefaultAtomColor(),
       stroke: 'none',
       'stroke-width': 0,
     });
@@ -1063,7 +1080,7 @@ class ReAtom extends ReObject {
         font: options.font,
         'font-size': options.fontszsubInPx,
         fill:
-          options.atomColoring && elem ? ElementColor[this.a.label] : '#000',
+          options.atomColoring && elem ? ElementColor[this.a.label] : getDefaultAtomColor(),
       });
       if (stereoLabel) {
         // use dom element to change color of stereo label which is the first element
@@ -1321,7 +1338,7 @@ function getStereoAtomColor(options, stereoLabel) {
     options.colorStereogenicCenters === StereoColoringType.Off ||
     options.colorStereogenicCenters === StereoColoringType.BondsOnly
   ) {
-    return '#000';
+    return getDefaultAtomColor();
   }
 
   return getColorFromStereoLabel(options, stereoLabel);
@@ -1338,7 +1355,7 @@ export function getColorFromStereoLabel(options, stereoLabel) {
     case StereoLabel.Abs:
       return options.colorOfAbsoluteCenters;
     default:
-      return '#000';
+      return getDefaultAtomColor();
   }
 }
 
@@ -1554,7 +1571,7 @@ function buildLabel(
   if (label.text === atom.a.label) {
     const element = Elements.get(label.text);
     if (atomColoring && element) {
-      atom.color = ElementColor[label.text] ?? '#000';
+      atom.color = ElementColor[label.text] ?? getDefaultAtomColor();
     }
   }
 

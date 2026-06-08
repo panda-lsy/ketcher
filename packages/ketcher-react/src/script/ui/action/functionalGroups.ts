@@ -1,3 +1,6 @@
+
+
+
 /****************************************************************************
  * Copyright 2021 EPAM Systems
  *
@@ -16,6 +19,7 @@
 
 import isHidden from './isHidden';
 import { MODES } from 'src/constants';
+
 
 const functionalGroupsLib = {
   'functional-groups': {

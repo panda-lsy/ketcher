@@ -118,6 +118,22 @@ function AboutDialog(props: Readonly<AboutDialogProps>) {
                 <p>Standalone</p>
               )}
             </div>
+            <br />
+            <div className={classes.indigoVersion}>
+              <dt>
+                Modified for{' '}
+                <a
+                  href="https://github.com/panda-lsy/ChemVision"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  ChemVision
+                </a>
+              </dt>
+              <dd style={{ fontSize: '11px', color: '#888' }}>
+                中文本地化 · 暗色模式 · 导出增强 · SVG/PNG 中文字体
+              </dd>
+            </div>
           </dl>
         </div>
       </div>

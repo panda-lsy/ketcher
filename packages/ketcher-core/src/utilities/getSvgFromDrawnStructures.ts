@@ -10,6 +10,84 @@ type Margins = {
   vertical: number;
 };
 
+const CHINESE_FONT_FAMILY =
+  "'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', 'Hiragino Sans GB', Arial, sans-serif";
+
+function isDarkMode(): boolean {
+  try {
+    return document.documentElement.getAttribute('data-theme') === 'dark';
+  } catch (_) {
+    return false;
+  }
+}
+
+function getStrokeColor(): string {
+  return isDarkMode() ? '#e9eef5' : '#000';
+}
+
+/**
+ * 在 SVG 中注入中文字体引用
+ */
+function injectChineseFont(svg: SVGSVGElement): void {
+  // 添加 Google Fonts 引用
+  const existingDefs = svg.querySelector('defs');
+  const styleContent =
+    "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');";
+
+  if (existingDefs) {
+    const existingStyle = existingDefs.querySelector('style');
+    if (existingStyle) {
+      existingStyle.textContent += styleContent;
+    } else {
+      const style = document.createElementNS(SVG_NAMESPACE_URI, 'style');
+      style.textContent = styleContent;
+      existingDefs.appendChild(style);
+    }
+  } else {
+    const defs = document.createElementNS(SVG_NAMESPACE_URI, 'defs');
+    const style = document.createElementNS(SVG_NAMESPACE_URI, 'style');
+    style.textContent = styleContent;
+    defs.appendChild(style);
+    svg.insertBefore(defs, svg.firstChild);
+  }
+
+  // 给所有 text 元素设置中文字体
+  svg.querySelectorAll('text').forEach((el) => {
+    el.setAttribute('font-family', CHINESE_FONT_FAMILY);
+  });
+}
+
+/**
+ * 替换 SVG 中的黑色笔触为当前主题颜色
+ */
+function applyThemeColors(svg: SVGSVGElement): void {
+  const strokeColor = getStrokeColor();
+  if (strokeColor === '#000') return; // 亮色模式无需修改
+
+  // 替换 stroke 和 fill 中的黑色
+  svg.querySelectorAll('[stroke="#000"], [stroke="black"]').forEach((el) => {
+    el.setAttribute('stroke', strokeColor);
+  });
+  svg.querySelectorAll('[fill="#000"], [fill="black"]').forEach((el) => {
+    el.setAttribute('fill', strokeColor);
+  });
+
+  // 替换内联 style 中的颜色
+  svg.querySelectorAll('[style]').forEach((el) => {
+    const style = el.getAttribute('style') || '';
+    if (style.includes('#000') || style.includes('black')) {
+      el.setAttribute(
+        'style',
+        style
+          .replace(/stroke:\s*#000/g, `stroke: ${strokeColor}`)
+          .replace(/stroke:\s*black/g, `stroke: ${strokeColor}`)
+          .replace(/fill:\s*#000/g, `fill: ${strokeColor}`)
+          .replace(/fill:\s*black/g, `fill: ${strokeColor}`),
+      );
+    }
+  });
+}
+
 export const getSvgFromDrawnStructures = (
   canvas: SVGSVGElement,
   type: 'preview' | 'file',
@@ -46,6 +124,13 @@ export const getSvgFromDrawnStructures = (
   wrapper.querySelectorAll('g')?.forEach((el) => {
     if (el.hasAttribute('opacity')) el.removeAttribute('opacity');
   });
+
+  // ★ 注入中文字体
+  injectChineseFont(wrapper);
+
+  // ★ 应用主题颜色（暗色模式下黑色→白色）
+  applyThemeColors(wrapper);
+
   svgInnerHTML = wrapper.innerHTML;
   // remove "cursor: pointer" style only from elements where it appears standalone,
   // preserving other style properties on bond path elements (stroke, fill, stroke-width, etc.)
@@ -73,8 +158,17 @@ export const getSvgFromDrawnStructures = (
     drawStructureClientRect.height + marginValues.vertical * 2;
   const viewBox = `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`;
 
+  // ★ 暗色模式下预览使用透明背景，亮色模式使用白色背景
+  const dark = isDarkMode();
+  const bgStyle =
+    type === 'preview'
+      ? dark
+        ? "style='background: transparent'"
+        : "style='background: white'"
+      : '';
+
   if (type === 'preview')
-    return `<svg width='100%' height='100%' style='position: absolute' viewBox='${viewBox}'>${svgInnerHTML}</svg>`;
+    return `<svg width='100%' height='100%' ${bgStyle} viewBox='${viewBox}'>${svgInnerHTML}</svg>`;
   else if (type === 'file')
     return `<svg width='${viewBoxWidth}' height='${viewBoxHeight}' viewBox='${viewBox}' xmlns='${SVG_NAMESPACE_URI}'>${svgInnerHTML}</svg>`;
   else return `<svg xmlns='${SVG_NAMESPACE_URI}' />`;

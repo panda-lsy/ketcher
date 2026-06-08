@@ -18,6 +18,10 @@
     "sketcher",
     "chemistry"
   ],
+  "sideEffects": [
+    "./src/locales/**",
+    "*.css"
+  ],
   "bugs": {
     "url": "https://github.com/epam/ketcher/issues"
   },

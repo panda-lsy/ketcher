@@ -14,6 +14,9 @@
  * limitations under the License.
  ***************************************************************************/
 
+// 初始化中文本地化（sideEffects 标记防止 tree-shake）
+import './locales/zh';
+
 export * from './Editor';
 export * from './script';
 export * from './constants';
