@@ -282,11 +282,12 @@ function setupPostMessageBridge(ketcher: Ketcher) {
         }
         case 'exportSvg': {
           try {
-            // ★ 使用 canvas SVG（含中文字体注入）替代 Indigo 渲染
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const canvas = (ketcher.editor as any)?.canvas as
-              | SVGSVGElement
-              | undefined;
+            // ★ 使用 DOM 中的 SVG canvas（含中文字体注入）
+            const canvas = (document
+              .querySelector('.drawn-structures')
+              ?.closest('svg') ||
+              document.querySelector('.cliparea svg') ||
+              document.querySelector('#root svg')) as SVGSVGElement | null;
             if (canvas) {
               const { getSvgFromDrawnStructures } = await import(
                 'ketcher-core'
@@ -313,10 +314,9 @@ function setupPostMessageBridge(ketcher: Ketcher) {
         case 'exportPng': {
           try {
             // ★ 使用 canvas SVG 转 PNG（浏览器渲染，支持中文）
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const canvas = (ketcher.editor as any)?.canvas as
-              | SVGSVGElement
-              | undefined;
+            const canvas = document.querySelector(
+              'svg.drawn-structures, svg[class*="struct"], #root svg',
+            ) as SVGSVGElement | null;
             if (canvas) {
               const { getSvgFromDrawnStructures } = await import(
                 'ketcher-core'
