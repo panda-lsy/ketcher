@@ -735,6 +735,20 @@ export class Ketcher {
       ...serverSettings,
       ...options,
     });
+
+    // ★ SVG 格式：注入中文字体支持
+    if (options.outputFormat === 'svg') {
+      try {
+        let svgText = atob(base64);
+        svgText = Ketcher._injectChineseFont(svgText);
+        const encoded = btoa(unescape(encodeURIComponent(svgText)));
+        const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+        return new Blob([bytes], { type: meta });
+      } catch (_) {
+        // 回退到原始数据
+      }
+    }
+
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
@@ -743,6 +757,16 @@ export class Ketcher {
     const byteArray = new Uint8Array(byteNumbers);
     const blob = new Blob([byteArray], { type: meta });
     return blob;
+  }
+
+  private static _injectChineseFont(svg: string): string {
+    const fontCSS = "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');";
+    const fontFamily = "'Noto Sans SC', 'Microsoft YaHei', 'PingFang SC', Arial, sans-serif";
+    const fontDef = `<defs><style>${fontCSS}</style></defs>`;
+    let result = svg.replace(/<svg([^>]*)>/, `<svg$1>${fontDef}`);
+    result = result.replace(/<text /g, `<text font-family="${fontFamily}" `);
+    result = result.replace(/<text>/g, `<text font-family="${fontFamily}">`);
+    return result;
   }
 
   public reinitializeIndigo(structService: StructService) {
