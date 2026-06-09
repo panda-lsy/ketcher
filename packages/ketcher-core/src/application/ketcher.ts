@@ -760,10 +760,20 @@ export class Ketcher {
   }
 
   private static _injectChineseFont(svg: string): string {
-    // 使用系统自带中文字体（无需外部加载，本地 file:// 也能用）
-    const fontFamily = "Noto Sans SC, Microsoft YaHei, PingFang SC, Hiragino Sans GB, WenQuanYi Micro Hei, sans-serif";
-    let result = svg.replace(/<text /g, `<text font-family="${fontFamily}" `);
-    result = result.replace(/<text>/g, `<text font-family="${fontFamily}">`);
+    // Indigo WASM 使用内部字体名渲染 SVG，需要替换为系统中文字体
+    const cjkFont = 'Noto Sans SC, Microsoft YaHei, PingFang SC, WenQuanYi Micro Hei, sans-serif';
+
+    // 替换所有 font-family 属性中的字体为包含中文字体的列表
+    // Indigo 常用: 'Segoe UI', Arial, sans-serif 等
+    let result = svg.replace(
+      /font-family="[^"]*"/g,
+      `font-family="${cjkFont}"`,
+    );
+    // 也处理 font-family: ... 的 CSS 内联样式
+    result = result.replace(
+      /font-family:\s*[^;"'}]+/g,
+      `font-family: ${cjkFont}`,
+    );
     return result;
   }
 
