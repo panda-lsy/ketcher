@@ -717,63 +717,72 @@ export class Ketcher {
       outputFormat: 'png',
     },
   ): Promise<Blob> {
-    let meta = '';
+    const format = options.outputFormat === 'svg' ? 'svg' : 'png';
+    const meta = format === 'svg' ? 'image/svg+xml' : 'image/png';
 
-    switch (options.outputFormat) {
-      case 'svg':
-        meta = 'image/svg+xml';
-        break;
-
-      case 'png':
-      default:
-        meta = 'image/png';
-        options.outputFormat = 'png';
+    // ★ 源码级修复：优先使用 canvas SVG（浏览器渲染，支持中文）
+    // 绕过 Indigo WASM（不支持 CJK 字体）
+    try {
+      const editor = provideEditorInstance();
+      const canvas = editor?.canvas as SVGSVGElement | undefined;
+      if (canvas) {
+        const svgString = getSvgFromDrawnStructures(canvas, 'file');
+        if (svgString) {
+          if (format === 'svg') {
+            return new Blob([svgString], { type: meta });
+          }
+          // PNG: 通过浏览器 canvas 渲染 SVG → PNG
+          return await Ketcher._svgToPngBlob(svgString);
+        }
+      }
+    } catch (_) {
+      // canvas 方式失败，回退到 Indigo
     }
-    const serverSettings = this.editor.serverSettings;
 
+    // 回退：Indigo 渲染
+    const serverSettings = this.editor.serverSettings;
     const base64 = await this.structService.generateImageAsBase64(data, {
       ...serverSettings,
       ...options,
     });
-
-    // ★ SVG 格式：注入中文字体支持
-    if (options.outputFormat === 'svg') {
-      try {
-        let svgText = atob(base64);
-        svgText = Ketcher._injectChineseFont(svgText);
-        const encoded = btoa(unescape(encodeURIComponent(svgText)));
-        const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
-        return new Blob([bytes], { type: meta });
-      } catch (_) {
-        // 回退到原始数据
-      }
-    }
-
     const byteCharacters = atob(base64);
     const byteNumbers = new Array(byteCharacters.length);
     for (let i = 0; i < byteCharacters.length; i++) {
       byteNumbers[i] = byteCharacters.charCodeAt(i);
     }
-    const byteArray = new Uint8Array(byteNumbers);
-    const blob = new Blob([byteArray], { type: meta });
-    return blob;
+    return new Blob([new Uint8Array(byteNumbers)], { type: meta });
+  }
+
+  /**
+   * SVG → PNG 通过浏览器 canvas 渲染（支持中文字体）
+   */
+  private static _svgToPngBlob(svgString: string): Promise<Blob> {
+    return new Promise((resolve, reject) => {
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth * 2;
+        c.height = img.naturalHeight * 2;
+        const ctx = c.getContext('2d');
+        if (!ctx) { URL.revokeObjectURL(url); reject(new Error('no ctx')); return; }
+        ctx.scale(2, 2);
+        ctx.drawImage(img, 0, 0);
+        c.toBlob((b) => {
+          URL.revokeObjectURL(url);
+          resolve(b || new Blob([], { type: 'image/png' }));
+        }, 'image/png');
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('svg load fail')); };
+      img.src = url;
+    });
   }
 
   private static _injectChineseFont(svg: string): string {
-    // Indigo WASM 使用内部字体名渲染 SVG，需要替换为系统中文字体
     const cjkFont = 'Noto Sans SC, Microsoft YaHei, PingFang SC, WenQuanYi Micro Hei, sans-serif';
-
-    // 替换所有 font-family 属性中的字体为包含中文字体的列表
-    // Indigo 常用: 'Segoe UI', Arial, sans-serif 等
-    let result = svg.replace(
-      /font-family="[^"]*"/g,
-      `font-family="${cjkFont}"`,
-    );
-    // 也处理 font-family: ... 的 CSS 内联样式
-    result = result.replace(
-      /font-family:\s*[^;"'}]+/g,
-      `font-family: ${cjkFont}`,
-    );
+    let result = svg.replace(/font-family="[^"]*"/g, `font-family="${cjkFont}"`);
+    result = result.replace(/font-family:\s*[^;"'}]+/g, `font-family: ${cjkFont}`);
     return result;
   }
 
