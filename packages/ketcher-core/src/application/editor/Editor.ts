@@ -2002,12 +2002,30 @@ export class CoreEditor {
         eventName: 'mouseover',
         toolEventHandler: 'mouseover',
       },
+      // ★ 触摸事件支持（移动端拖拽）
+      {
+        target: this.canvas,
+        eventName: 'touchstart',
+        toolEventHandler: 'mousedown',
+      },
+      {
+        target: document,
+        eventName: 'touchmove',
+        toolEventHandler: 'mousemove',
+      },
+      {
+        target: document,
+        eventName: 'touchend',
+        toolEventHandler: 'mouseup',
+      },
     ];
 
     return trackedDomEvents;
   }
 
   private isMouseMainButtonPressed(event) {
+    // 触摸事件始终视为主按钮按下
+    if (event?.type?.startsWith('touch')) return true;
     return event?.button === 0;
   }
 
@@ -2042,13 +2060,24 @@ export class CoreEditor {
   }
 
   private updateLastCursorPosition(event) {
-    const events = ['mousemove', 'click', 'mousedown', 'mouseup', 'mouseover'];
+    const events = ['mousemove', 'click', 'mousedown', 'mouseup', 'mouseover', 'touchstart', 'touchmove', 'touchend'];
     if (events.includes(event.type)) {
       const clientAreaBoundingBox = this.canvasOffset;
+      // 触摸事件从 touches 数组获取坐标
+      let pageX: number, pageY: number;
+      if (event.type.startsWith('touch')) {
+        const touch = event.touches?.[0] || event.changedTouches?.[0];
+        if (!touch) return;
+        pageX = touch.pageX;
+        pageY = touch.pageY;
+      } else {
+        pageX = event.pageX;
+        pageY = event.pageY;
+      }
 
       this.lastCursorPosition = new Vec2({
-        x: event.pageX - clientAreaBoundingBox.x,
-        y: event.pageY - clientAreaBoundingBox.y,
+        x: pageX - clientAreaBoundingBox.x,
+        y: pageY - clientAreaBoundingBox.y,
       });
       this.lastCursorPositionOfCanvas = Coordinates.viewToCanvas(
         this.lastCursorPosition,

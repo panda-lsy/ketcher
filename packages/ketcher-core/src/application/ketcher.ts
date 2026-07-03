@@ -42,7 +42,6 @@ import {
   LogLevel,
   runAsyncAction,
   SettingsManager,
-  getSvgFromDrawnStructures,
   KetcherLogger,
   ensureString,
 } from 'utilities';
@@ -713,77 +712,63 @@ export class Ketcher {
 
   async generateImage(
     data: string,
-    options: GenerateImageOptions = {
-      outputFormat: 'png',
-    },
+    options: GenerateImageOptions = { outputFormat: 'png' },
   ): Promise<Blob> {
     const format = options.outputFormat === 'svg' ? 'svg' : 'png';
     const meta = format === 'svg' ? 'image/svg+xml' : 'image/png';
 
-    // ★ 源码级修复：优先使用 canvas SVG（浏览器渲染，支持中文）
-    // 绕过 Indigo WASM（不支持 CJK 字体）
+    // ★ 直接序列化 SVG 元素
     try {
-      const editor = provideEditorInstance();
-      const canvas = editor?.canvas as SVGSVGElement | undefined;
-      if (canvas) {
-        const svgString = getSvgFromDrawnStructures(canvas, 'file');
-        if (svgString) {
-          if (format === 'svg') {
-            return new Blob([svgString], { type: meta });
-          }
-          // PNG: 通过浏览器 canvas 渲染 SVG → PNG
-          return await Ketcher._svgToPngBlob(svgString);
+      const svgEl = document.querySelector(
+        '.intermediate-canvas svg, .cliparea svg, [class*="StructEditor"] svg'
+      ) as SVGSVGElement | null;
+      if (svgEl) {
+        const clone = svgEl.cloneNode(true) as SVGSVGElement;
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        // 确保有 viewBox（解决 PNG 预览显示不全）
+        if (!clone.getAttribute('viewBox')) {
+          const w = clone.getAttribute('width') || '800';
+          const h = clone.getAttribute('height') || '600';
+          clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
         }
+        const svgStr = new XMLSerializer().serializeToString(clone);
+        if (format === 'svg') {
+          return new Blob([svgStr], { type: meta });
+        }
+        // PNG: SVG → Image → Canvas
+        const png = await Ketcher._svgStrToPng(svgStr);
+        if (png) return png;
       }
-    } catch (_) {
-      // canvas 方式失败，回退到 Indigo
-    }
+    } catch (_) {}
 
-    // 回退：Indigo 渲染
-    const serverSettings = this.editor.serverSettings;
-    const base64 = await this.structService.generateImageAsBase64(data, {
-      ...serverSettings,
-      ...options,
-    });
-    const byteCharacters = atob(base64);
-    const byteNumbers = new Array(byteCharacters.length);
-    for (let i = 0; i < byteCharacters.length; i++) {
-      byteNumbers[i] = byteCharacters.charCodeAt(i);
-    }
-    return new Blob([new Uint8Array(byteNumbers)], { type: meta });
+    // 回退：Indigo
+    const ss = this.editor.serverSettings;
+    const b64 = await this.structService.generateImageAsBase64(data, { ...ss, ...options });
+    return new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: meta });
   }
 
-  /**
-   * SVG → PNG 通过浏览器 canvas 渲染（支持中文字体）
-   */
-  private static _svgToPngBlob(svgString: string): Promise<Blob> {
-    return new Promise((resolve, reject) => {
-      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
+  private static _svgStrToPng(svgStr: string): Promise<Blob | null> {
+    return new Promise(resolve => {
+      const url = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
       const img = new Image();
       img.onload = () => {
+        const w = img.naturalWidth || 800;
+        const h = img.naturalHeight || 600;
+        const scale = 3; // 3x 高清
         const c = document.createElement('canvas');
-        c.width = img.naturalWidth * 2;
-        c.height = img.naturalHeight * 2;
+        c.width = w * scale;
+        c.height = h * scale;
         const ctx = c.getContext('2d');
-        if (!ctx) { URL.revokeObjectURL(url); reject(new Error('no ctx')); return; }
-        ctx.scale(2, 2);
-        ctx.drawImage(img, 0, 0);
-        c.toBlob((b) => {
-          URL.revokeObjectURL(url);
-          resolve(b || new Blob([], { type: 'image/png' }));
-        }, 'image/png');
+        if (!ctx) { URL.revokeObjectURL(url); resolve(null); return; }
+        ctx.scale(scale, scale);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        c.toBlob(b => { URL.revokeObjectURL(url); resolve(b); }, 'image/png');
       };
-      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('svg load fail')); };
+      img.onerror = () => { URL.revokeObjectURL(url); resolve(null); };
       img.src = url;
     });
-  }
-
-  private static _injectChineseFont(svg: string): string {
-    const cjkFont = 'Noto Sans SC, Microsoft YaHei, PingFang SC, WenQuanYi Micro Hei, sans-serif';
-    let result = svg.replace(/font-family="[^"]*"/g, `font-family="${cjkFont}"`);
-    result = result.replace(/font-family:\s*[^;"'}]+/g, `font-family: ${cjkFont}`);
-    return result;
   }
 
   public reinitializeIndigo(structService: StructService) {

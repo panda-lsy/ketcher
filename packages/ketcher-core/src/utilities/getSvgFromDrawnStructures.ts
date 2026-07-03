@@ -26,35 +26,14 @@ function getStrokeColor(): string {
 }
 
 /**
- * 在 SVG 中注入中文字体引用
+ * 在 SVG 字符串中替换中文字体（字符串级操作，避免 DOM 序列化问题）
  */
-function injectChineseFont(svg: SVGSVGElement): void {
-  // 添加 Google Fonts 引用
-  const existingDefs = svg.querySelector('defs');
-  const styleContent =
-    "@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+SC:wght@400;700&display=swap');";
-
-  if (existingDefs) {
-    const existingStyle = existingDefs.querySelector('style');
-    if (existingStyle) {
-      existingStyle.textContent += styleContent;
-    } else {
-      const style = document.createElementNS(SVG_NAMESPACE_URI, 'style');
-      style.textContent = styleContent;
-      existingDefs.appendChild(style);
-    }
-  } else {
-    const defs = document.createElementNS(SVG_NAMESPACE_URI, 'defs');
-    const style = document.createElementNS(SVG_NAMESPACE_URI, 'style');
-    style.textContent = styleContent;
-    defs.appendChild(style);
-    svg.insertBefore(defs, svg.firstChild);
-  }
-
-  // 给所有 text 元素设置中文字体
-  svg.querySelectorAll('text').forEach((el) => {
-    el.setAttribute('font-family', CHINESE_FONT_FAMILY);
-  });
+function injectChineseFontSvg(svgStr: string): string {
+  // 替换所有 font-family="..." 为中文字体
+  return svgStr.replace(
+    /font-family="[^"]*"/g,
+    `font-family="${CHINESE_FONT_FAMILY}"`,
+  );
 }
 
 /**
@@ -125,13 +104,12 @@ export const getSvgFromDrawnStructures = (
     if (el.hasAttribute('opacity')) el.removeAttribute('opacity');
   });
 
-  // ★ 注入中文字体
-  injectChineseFont(wrapper);
-
   // ★ 应用主题颜色（暗色模式下黑色→白色）
   applyThemeColors(wrapper);
 
   svgInnerHTML = wrapper.innerHTML;
+  // ★ 注入中文字体（字符串级替换，避免 DOM 序列化重复属性）
+  svgInnerHTML = injectChineseFontSvg(svgInnerHTML);
   // remove "cursor: pointer" style only from elements where it appears standalone,
   // preserving other style properties on bond path elements (stroke, fill, stroke-width, etc.)
   svgInnerHTML = svgInnerHTML?.replace(/\bcursor:\s*pointer;\s*/g, '');

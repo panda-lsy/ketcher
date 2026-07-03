@@ -180,6 +180,8 @@ interface SaveDialogState {
   isLoading: boolean;
   structStr?: string;
   imageSrc?: string;
+  transparentBg: boolean;
+  whiteStroke: boolean;
 }
 
 interface AppState {
@@ -219,6 +221,7 @@ const ImageContent = ({
         src={`data:image/${format}+xml;base64,${imageSrc}`}
         alt={`${format} preview`}
         data-testid="preview-area"
+        style={{ objectFit: 'contain', maxWidth: '100%', maxHeight: '100%' }}
       />
     )}
   </div>
@@ -273,6 +276,8 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
       imageFormat: 'svg',
       tabIndex: 0,
       isLoading: true,
+      transparentBg: false,
+      whiteStroke: false,
     };
     this.isRxn =
       this.props.struct.hasRxnArrow() || this.props.struct.hasMultitailArrow();
@@ -346,7 +351,32 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
     return format !== SupportedFormat.mol && Object.keys(errors).length > 0;
   };
 
-  changeType = (
+  private _svgToPngDataUrl(svgString: string, transparentBg = false): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth || 800;
+        c.height = img.naturalHeight || 600;
+        const ctx = c.getContext('2d');
+        if (!ctx) { URL.revokeObjectURL(url); reject(new Error('no ctx')); return; }
+        if (!transparentBg) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, c.width, c.height);
+        }
+        ctx.drawImage(img, 0, 0);
+        const dataUrl = c.toDataURL('image/png');
+        URL.revokeObjectURL(url);
+        resolve(dataUrl);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('svg load')); };
+      img.src = url;
+    });
+  }
+
+  changeType = async (
     type: SupportedFormat | OutputFormatType,
   ): Promise<Error | void> => {
     const { struct, server, options, formState, ignoreChiralFlag } = this.props;
@@ -371,8 +401,58 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
         structStr,
         isLoading: true,
       });
-      const serverOptions = { ...options };
 
+      // ★ 优先序列化 SVG 元素（浏览器渲染，支持中文）
+      try {
+        const svgEl = document.querySelector(
+          '.intermediate-canvas svg, .cliparea svg, [class*="StructEditor"] svg'
+        ) as SVGSVGElement | null;
+        if (svgEl) {
+          const clone = svgEl.cloneNode(true) as SVGSVGElement;
+          clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+          if (!clone.getAttribute('viewBox')) {
+            const w = clone.getAttribute('width') || '800';
+            const h = clone.getAttribute('height') || '600';
+            clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+          }
+          let svgStr = new XMLSerializer().serializeToString(clone);
+
+          // ★ 应用导出选项
+          if (this.state.whiteStroke) {
+            svgStr = svgStr.replace(/stroke="#000"/g, 'stroke="#ffffff"');
+            svgStr = svgStr.replace(/stroke="black"/g, 'stroke="#ffffff"');
+            svgStr = svgStr.replace(/fill="#000"/g, 'fill="#ffffff"');
+            svgStr = svgStr.replace(/fill="black"/g, 'fill="#ffffff"');
+          }
+          if (this.state.transparentBg) {
+            // 移除白色背景矩形
+            svgStr = svgStr.replace(/<rect[^>]*fill="white"[^>]*\/>/g, '');
+            svgStr = svgStr.replace(/<rect[^>]*fill="#fff"[^>]*\/>/g, '');
+            svgStr = svgStr.replace(/<rect[^>]*fill="#ffffff"[^>]*\/>/g, '');
+          }
+
+          if (type === 'svg') {
+            this.setState({
+              disableControls: false, tabIndex: 0,
+              imageSrc: btoa(unescape(encodeURIComponent(svgStr))),
+              imageFormat: type, isLoading: false,
+            });
+            return Promise.resolve();
+          }
+          // PNG
+          const pngUrl = await this._svgToPngDataUrl(svgStr, this.state.transparentBg);
+          if (pngUrl) {
+            this.setState({
+              disableControls: false, tabIndex: 0,
+              imageSrc: pngUrl.split(',')[1] || '', imageFormat: type, isLoading: false,
+            });
+            return Promise.resolve();
+          }
+        }
+      } catch (_) {}
+
+      // 回退到 Indigo
+      const serverOptions = { ...options };
       serverOptions.outputFormat = type;
 
       return server
@@ -560,6 +640,35 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
             data-testid="file-format-list"
           />
         </Form>
+        {/* ★ SVG/PNG 导出选项 */}
+        {this.isImageFormat(format) && (
+          <div style={{ display: 'flex', gap: '16px', padding: '8px 0', fontSize: '12px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: 'inherit' }}>
+              <input
+                type="checkbox"
+                checked={this.state.transparentBg}
+                onChange={(e) => {
+                  this.setState({ transparentBg: e.target.checked });
+                  // 重新生成预览
+                  setTimeout(() => this.changeType(format as SupportedFormat | OutputFormatType), 100);
+                }}
+              />
+              透明背景
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '4px', cursor: 'pointer', color: 'inherit' }}>
+              <input
+                type="checkbox"
+                checked={this.state.whiteStroke}
+                onChange={(e) => {
+                  this.setState({ whiteStroke: e.target.checked });
+                  // 重新生成预览
+                  setTimeout(() => this.changeType(format as SupportedFormat | OutputFormatType), 100);
+                }}
+              />
+              白色笔触
+            </label>
+          </div>
+        )}
         <Tabs
           className={classes.tabs}
           captions={tabs}
