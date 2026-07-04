@@ -952,18 +952,26 @@ export class Ketcher {
         }
         const svgStr = new XMLSerializer().serializeToString(clone);
         if (format === 'svg') {
-          const bytes = new TextEncoder().encode(svgStr);
+          // Safe base64 encoding (compatible with older browsers)
           let binary = '';
-          bytes.forEach(b => binary += String.fromCharCode(b));
+          for (let i = 0; i < svgStr.length; i++) {
+            binary += String.fromCharCode(svgStr.charCodeAt(i) & 0xff);
+          }
           return 'data:image/svg+xml;base64,' + btoa(binary);
         }
         return await Ketcher._svgStrToDataUrl(svgStr, bg !== 'transparent');
       }
     } catch (_) {}
 
-    const ss = this.editor.serverSettings;
-    const b64 = await this.structService.generateImageAsBase64(data, { ...ss, ...options });
-    return 'data:image/' + format + ';base64,' + b64;
+    // Fallback: Indigo rendering
+    try {
+      const ss = this.editor.serverSettings;
+      const b64 = await this.structService.generateImageAsBase64(data, { ...ss, ...options });
+      return 'data:image/' + format + ';base64,' + b64;
+    } catch (e) {
+      console.error('generateImageAsDataUrl failed:', e);
+      return '';
+    }
   }
 
   private static _svgStrToDataUrl(svgStr: string, hasBg: boolean): Promise<string> {
