@@ -923,4 +923,70 @@ export class Ketcher {
 
     editor.events.switchToMoleculesMode.dispatch();
   }
+  /** Generate image as base64 data URL (compatible with mobile bridge) */
+  async generateImageAsDataUrl(
+    data: string,
+    options: GenerateImageOptions = { outputFormat: 'png' },
+  ): Promise<string> {
+    const format = options.outputFormat === 'svg' ? 'svg' : 'png';
+
+    try {
+      const svgEl = document.querySelector(
+        '.intermediate-canvas svg, .cliparea svg, [class*="StructEditor"] svg',
+      ) as SVGSVGElement | null;
+      if (svgEl) {
+        const clone = svgEl.cloneNode(true) as SVGSVGElement;
+        clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+        if (!clone.getAttribute('viewBox')) {
+          const w = clone.getAttribute('width') || '800';
+          const h = clone.getAttribute('height') || '600';
+          clone.setAttribute('viewBox', `0 0 ${w} ${h}`);
+        }
+        const bg = options.backgroundColor || 'transparent';
+        if (bg !== 'transparent') {
+          const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
+          rect.setAttribute('width', '100%');
+          rect.setAttribute('height', '100%');
+          rect.setAttribute('fill', bg);
+          clone.insertBefore(rect, clone.firstChild);
+        }
+        const svgStr = new XMLSerializer().serializeToString(clone);
+        if (format === 'svg') {
+          const bytes = new TextEncoder().encode(svgStr);
+          let binary = '';
+          bytes.forEach(b => binary += String.fromCharCode(b));
+          return 'data:image/svg+xml;base64,' + btoa(binary);
+        }
+        return await Ketcher._svgStrToDataUrl(svgStr, bg !== 'transparent');
+      }
+    } catch (_) {}
+
+    const ss = this.editor.serverSettings;
+    const b64 = await this.structService.generateImageAsBase64(data, { ...ss, ...options });
+    return 'data:image/' + format + ';base64,' + b64;
+  }
+
+  private static _svgStrToDataUrl(svgStr: string, hasBg: boolean): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const url = URL.createObjectURL(new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' }));
+      const img = new Image();
+      img.onload = () => {
+        const c = document.createElement('canvas');
+        c.width = img.naturalWidth || 800;
+        c.height = img.naturalHeight || 600;
+        const ctx = c.getContext('2d');
+        if (!ctx) { URL.revokeObjectURL(url); reject(new Error('no ctx')); return; }
+        if (hasBg) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, c.width, c.height);
+        }
+        ctx.drawImage(img, 0, 0);
+        resolve(c.toDataURL('image/png'));
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('img')); };
+      img.src = url;
+    });
+  }
+
 }
