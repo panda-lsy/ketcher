@@ -362,13 +362,12 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
         c.width = (img.naturalWidth || 800) * scale;
         c.height = (img.naturalHeight || 600) * scale;
         const ctx = c.getContext('2d');
-        ctx.scale(scale, scale);
         if (!ctx) { URL.revokeObjectURL(url); reject(new Error('no ctx')); return; }
         if (!transparentBg) {
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(0, 0, c.width, c.height);
         }
-        ctx.drawImage(img, 0, 0);
+        ctx.drawImage(img, 0, 0, c.width, c.height);
         const dataUrl = c.toDataURL('image/png');
         URL.revokeObjectURL(url);
         resolve(dataUrl);
@@ -399,9 +398,10 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
         clone.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
       }
 
-      // ★ Read current state for options
+      // ★ Read current state for options (after setState in onChange)
       const whiteStroke = this.state.whiteStroke;
       const transparentBg = this.state.transparentBg;
+      console.log('[ChemVision] regeneratePreview:', {format, whiteStroke, transparentBg});
 
       let svgStr = new XMLSerializer().serializeToString(clone);
       if (whiteStroke) {
