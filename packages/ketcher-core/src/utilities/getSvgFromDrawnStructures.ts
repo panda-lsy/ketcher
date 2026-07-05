@@ -116,7 +116,7 @@ export const getSvgFromDrawnStructures = (
 
   const drawStructureClientRect = canvas
     ?.getElementsByClassName('drawn-structures')[0]
-    .getBoundingClientRect();
+    ?.getBoundingClientRect();
 
   if (!drawStructureClientRect || !svgInnerHTML) {
     const errorMessage = 'Cannot get drawn structures!';

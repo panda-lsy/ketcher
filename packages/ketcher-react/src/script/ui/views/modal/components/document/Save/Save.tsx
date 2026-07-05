@@ -650,7 +650,7 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
                 onChange={(e) => {
                   this.setState({ transparentBg: e.target.checked });
                   // 重新生成预览
-                  setTimeout(() => this.changeType(format as SupportedFormat | OutputFormatType), 100);
+                  setTimeout(() => this.changeType(this.state.imageFormat as SupportedFormat | OutputFormatType), 100);
                 }}
               />
               透明背景
@@ -662,7 +662,7 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
                 onChange={(e) => {
                   this.setState({ whiteStroke: e.target.checked });
                   // 重新生成预览
-                  setTimeout(() => this.changeType(format as SupportedFormat | OutputFormatType), 100);
+                  setTimeout(() => this.changeType(this.state.imageFormat as SupportedFormat | OutputFormatType), 100);
                 }}
               />
               白色笔触
