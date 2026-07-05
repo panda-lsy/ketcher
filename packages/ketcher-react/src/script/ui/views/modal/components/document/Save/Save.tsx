@@ -358,9 +358,11 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
       const img = new Image();
       img.onload = () => {
         const c = document.createElement('canvas');
-        c.width = img.naturalWidth || 800;
-        c.height = img.naturalHeight || 600;
+        const scale = 2;
+        c.width = (img.naturalWidth || 800) * scale;
+        c.height = (img.naturalHeight || 600) * scale;
         const ctx = c.getContext('2d');
+        ctx.scale(scale, scale);
         if (!ctx) { URL.revokeObjectURL(url); reject(new Error('no ctx')); return; }
         if (!transparentBg) {
           ctx.fillStyle = '#ffffff';
@@ -375,6 +377,94 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
       img.src = url;
     });
   }
+
+  /** Regenerate preview from local SVG DOM (works in standalone mode) */
+  private regeneratePreview = () => {
+    const format = this.state.imageFormat;
+    if (!this.isImageFormat(format)) return;
+
+    try {
+      const svgEl = document.querySelector(
+        '.intermediate-canvas svg, .cliparea svg, [class*="StructEditor"] svg'
+      ) as SVGSVGElement | null;
+      if (!svgEl) {
+        console.warn('[ChemVision] regeneratePreview: no SVG element found');
+        return;
+      }
+      const clone = svgEl.cloneNode(true) as SVGSVGElement;
+      clone.setAttribute('xmlns', 'http://www.w3.org/2000/svg');
+      if (!clone.getAttribute('viewBox')) {
+        const w = clone.getAttribute('width') || svgEl.clientWidth || '800';
+        const h = clone.getAttribute('height') || svgEl.clientHeight || '600';
+        clone.setAttribute('viewBox', '0 0 ' + w + ' ' + h);
+      }
+
+      // ★ Read current state for options
+      const whiteStroke = this.state.whiteStroke;
+      const transparentBg = this.state.transparentBg;
+
+      let svgStr = new XMLSerializer().serializeToString(clone);
+      if (whiteStroke) {
+        svgStr = svgStr.replace(/stroke="#000"/g, 'stroke="#ffffff"');
+        svgStr = svgStr.replace(/stroke="black"/g, 'stroke="#ffffff"');
+        svgStr = svgStr.replace(/fill="#000"/g, 'fill="#ffffff"');
+        svgStr = svgStr.replace(/fill="black"/g, 'fill="#ffffff"');
+      }
+      if (transparentBg) {
+        svgStr = svgStr.replace(/<rect[^>]*fill="white"[^>]*\/>/g, '');
+        svgStr = svgStr.replace(/<rect[^>]*fill="#fff"[^>]*\/>/g, '');
+        svgStr = svgStr.replace(/<rect[^>]*fill="#ffffff"[^>]*\/>/g, '');
+      }
+
+      if (format === 'svg') {
+        this.setState({
+          disableControls: false,
+          imageSrc: btoa(unescape(encodeURIComponent(svgStr))),
+          imageFormat: format,
+          isLoading: false,
+        });
+        return;
+      }
+
+      // PNG: render at 2x resolution
+      const img = new Image();
+      const blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      img.onload = () => {
+        const vb = (clone.getAttribute('viewBox') || '0 0 800 600').split(' ').map(Number);
+        const scale = 2;
+        const cw = Math.max(vb[2] || 800, img.naturalWidth || 800) * scale;
+        const ch = Math.max(vb[3] || 600, img.naturalHeight || 600) * scale;
+        const canvas = document.createElement('canvas');
+        canvas.width = cw;
+        canvas.height = ch;
+        const ctx = canvas.getContext('2d');
+        if (!transparentBg) {
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, cw, ch);
+        }
+        ctx.drawImage(img, 0, 0, cw, ch);
+        const pngDataUrl = canvas.toDataURL('image/png');
+        this.setState({
+          disableControls: false,
+          imageSrc: pngDataUrl.split(',')[1],
+          imageFormat: format,
+          isLoading: false,
+        });
+        URL.revokeObjectURL(url);
+      };
+      img.onerror = () => {
+        console.error('[ChemVision] regeneratePreview: image load failed');
+        this.setState({ disableControls: false, isLoading: false });
+        URL.revokeObjectURL(url);
+      };
+      img.src = url;
+    } catch (e) {
+      console.error('[ChemVision] regeneratePreview error:', e);
+      this.setState({ disableControls: false, isLoading: false });
+    }
+  };
+
 
   changeType = async (
     type: SupportedFormat | OutputFormatType,
@@ -650,7 +740,7 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
                 onChange={(e) => {
                   this.setState({ transparentBg: e.target.checked });
                   // 重新生成预览
-                  setTimeout(() => this.changeType(this.state.imageFormat as SupportedFormat | OutputFormatType), 100);
+                  this.regeneratePreview();
                 }}
               />
               透明背景
@@ -662,7 +752,7 @@ class SaveDialog extends Component<SaveDialogProps, SaveDialogState> {
                 onChange={(e) => {
                   this.setState({ whiteStroke: e.target.checked });
                   // 重新生成预览
-                  setTimeout(() => this.changeType(this.state.imageFormat as SupportedFormat | OutputFormatType), 100);
+                  this.regeneratePreview();
                 }}
               />
               白色笔触
